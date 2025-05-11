@@ -3,6 +3,18 @@ import time
 import mujoco
 import mujoco.viewer
 
+
+def trajectory(time, t_final, C_final):
+    """Generates trajectory position, velocity, and acceleration."""
+    a2 = 3 / t_final**2
+    a3 = -2 / t_final**3
+    Cposition = (a2 * time**2 + a3 * time**3) * C_final 
+    Cvelocity = (2 * a2 * time + 3 * time**2 * a3) * C_final
+    Cacceleration = (2 * a2 + 6 * time * a3) * C_final
+    
+    return Cposition, Cvelocity, Cacceleration
+
+
 class PDController:
     def __init__(self, kp, kd, setpoint):
         self.kp = kp
