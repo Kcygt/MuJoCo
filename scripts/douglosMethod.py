@@ -2,9 +2,14 @@ import time
 
 import mujoco
 import mujoco.viewer
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
-
-
+def safe_quat_to_euler(quat):
+    """Convert quaternion to Euler angles with zero-norm handling"""
+    if np.linalg.norm(quat) < 1e-6:  # Tolerance for floating point errors
+        return 0.0, 0.0, 0.0  # Default to neutral orientation
+    return R.from_quat([quat[1], quat[2], quat[3], quat[0]]).as_euler('xyz')
 
 
 class PDController:
@@ -41,18 +46,22 @@ class PDController:
         velocity = C_final * (30 * tau**2 - 60 * tau**3 + 30 * tau**4) / t_final
         acceleration = C_final * (60 * tau - 180 * tau**2 + 120 * tau**3) / (t_final**2)
         return position, velocity, acceleration
-    def altitudeThrust(self,zDes,zAct,mass):
-        """
-        Calculate the altitude of the drone based on its position and mass.
-        """
-        # Assuming the drone's position is given in meters and mass in kg
-        # The altitude can be calculated as the z-coordinate of the position
-        altitude =  (zDes - zAct) * 10
-        mass =  -9.81 * 1.325
-        totalThrust = mass +  altitude 
-        return totalThrust
-                     
-m = mujoco.MjModel.from_xml_path('mujoco_menagerie-main/skydio_x2/scene.xml')
+    
+    def altitudeThrust(self, zDesPos,
+        zDesVel, zActPos, zActVel, mass):
+        g = 9.81
+        base_thrust = mass * g
+        e = (zDesPos - zActPos) * 10
+        edot = (zDesVel - zActVel) * 1
+        return base_thrust + e + edot
+
+    def attitude_control(self, measured_angle, measured_rate, desired_angle, desired_rate):
+        error = desired_angle - measured_angle
+        rate_error = desired_rate - measured_rate
+        return self.kp * error + self.kd * rate_error
+    
+
+m = mujoco.MjModel.from_xml_path('mujoco_menagerie-main/crazyFly/scene.xml')
 d = mujoco.MjData(m)
 d.ctrl[0:4] = 4.0  # Set the thruster values to 0.5
 
@@ -65,25 +74,57 @@ pd_controller = PDController(kp, kd, setpoint=0.5)
 
 with mujoco.viewer.launch_passive(m, d) as viewer:
     start = time.time()
+
+    # Initialize controllers OUTSIDE the loop
+    roll_controller = PDController(kp=8, kd=0.5, setpoint=0)
+    pitch_controller = PDController(kp=8, kd=0.5, setpoint=0)
+    yaw_controller = PDController(kp=3, kd=0.1, setpoint=0)
+
     while viewer.is_running() and time.time() - start < 30:
         step_start = time.time()
         current_time = time.time() - start
 
         # Get desired position and velocity from your cubic trajectory
-        zDesPos, zDesVel, _ = pd_controller.quintic_trajectory(
+        zDesPos, zDesVel, _ = pd_controller.trajectory(
             min(current_time, t_final), t_final, C_final
         )
+         # Get orientation FIRST
+        quat = d.sensor('body_quat').data
+        r = R.from_quat([quat[1], quat[2], quat[3], quat[0]])       
+        roll, pitch, yaw = r.as_euler('xyz')
+
+        # Desired angles (modify these for movement)
+        desired_roll = 0.0  # radians
+        desired_pitch = 0.0
+        desired_yaw = 0.0
+
+        # Initialize controllers
+        roll_controller = PDController(kp=8, kd=0.5, setpoint=0)
+        pitch_controller = PDController(kp=8, kd=0.5, setpoint=0)
+        yaw_controller = PDController(kp=3, kd=0.1, setpoint=0)
+
+     # NOW calculate moments
+        roll_moment = roll_controller.attitude_control(roll, d.qvel[3], desired_roll, 0)
+        pitch_moment = pitch_controller.attitude_control(pitch, d.qvel[4], desired_pitch, 0)
+        yaw_moment = yaw_controller.attitude_control(yaw, d.qvel[5], desired_yaw, 0)
 
         # Get current position and velocity
         zActPos = d.qpos[2]
         zActVel = d.qvel[2]
 
-        thrust = pd_controller.altitudeThrust(zDesPos, zActPos, 1.325)
 
-  
-        # Apply control (adjust base thrust as needed for your drone)
-        d.ctrl[0:4] = 5
-        # print("Altitude : ", measured_pos)
+
+
+        thrust = pd_controller.altitudeThrust(zDesPos, zDesVel,zActPos,zActVel, 0.027)
+        print('altitude : ', zActPos)
+ 
+        
+        # Apply controls (indices match XML actuator order)
+        d.ctrl[0] = thrust        # Body thrust (z-axis)
+        d.ctrl[1] = roll_moment   # x_moment (roll)
+        d.ctrl[2] = pitch_moment  # y_moment (pitch)
+        d.ctrl[3] = yaw_moment    # z_moment (yaw)
+
         mujoco.mj_step(m, d)
 
         with viewer.lock():
