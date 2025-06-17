@@ -287,10 +287,10 @@ with mujoco.viewer.launch_passive(my_drone.m, my_drone.d) as viewer:
             my_drone.planner.update_target(np.array((1, 1, 1)))
 
         if time.time() - start > 10:
-            my_drone.planner.update_target(np.array((-1, 1, 2)))
+            my_drone.planner.update_target(np.array((1, 1, 1)))
 
         if time.time() - start > 18:
-            my_drone.planner.update_target(np.array((-1, -1, 0.5)))
+            my_drone.planner.update_target(np.array((1, 1, 1)))
 
         # outer control loop
         if step % 20 == 0:
