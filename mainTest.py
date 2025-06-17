@@ -9,52 +9,6 @@ import pickle
 from simple_pid import PID
 
 
-def save_data(filename, positions, velocities):
-    data = {"positions": positions, "velocities": velocities}
-    with open(filename, "wb") as f:
-        pickle.dump(data, f)
-
-
-def pid_to_thrust(input: np.array):
-    """Maps controller output to manipulated variable.
-
-    Args:
-        input (np.array): w € [3x1]
-
-    Returns:
-        np.array: [3x4]
-    """
-    c_to_F = np.array(
-        [
-            [-0.25, 0.25, 0.25, -0.25],
-            [0.25, 0.25, -0.25, -0.25],
-            [-0.25, 0.25, -0.25, 0.25],
-        ]
-    ).transpose()
-
-    return np.dot((c_to_F * input), np.array([1, 1, 1]))
-
-
-def outer_pid_to_thrust(input: np.array):
-    """Maps controller output to manipulated variable.
-
-    Args:
-        input (np.array): w € [3x1]
-
-    Returns:
-        np.array: [3x4]
-    """
-    c_to_F = np.array(
-        [
-            [0.25, 0.25, -0.25, -0.25],
-            [0.25, -0.25, -0.25, 0.25],
-            [0.25, 0.25, 0.25, 0.25],
-        ]
-    ).transpose()
-
-    return np.dot((c_to_F * input), np.array([1, 1, 1]))
-
-
 class PDController:
     def __init__(self, kp, kd, setpoint):
         self.kp = kp
@@ -274,7 +228,7 @@ class drone:
 my_drone = drone(target=np.array((0, 0, 1)))
 
 with mujoco.viewer.launch_passive(my_drone.m, my_drone.d) as viewer:
-    time.sleep(5)
+    time.sleep(1)
     # Close the viewer automatically after 30 wall-seconds.
     start = time.time()
     step = 1
