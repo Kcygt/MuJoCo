@@ -9,57 +9,14 @@ import pickle
 from simple_pid import PID
 
 
-class PDController:
-    def __init__(self, kp, kd, setpoint):
-        self.kp = kp
-        self.kd = kd
-        self.setpoint = setpoint
-        self.prev_error = 0
-
-    def compute(self, measured_value):
-        error = self.setpoint - measured_value
-        derivative = error - self.prev_error
-        output = (self.kp * error) + (self.kd * derivative)
-        self.prev_error = error
-        return output
-
-
-class PIDController:
-    def __init__(self, kp, ki, kd, setpoint):
-        self.kp = kp
-        self.ki = ki
-        self.kd = kd
-        self.setpoint = setpoint
-        self.prev_error = 0
-        self.integral = 0
-
-    def compute(self, measured_value):
-        error = self.setpoint - measured_value
-        self.integral += error
-        derivative = error - self.prev_error
-        output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
-        self.prev_error = error
-        return output
-
-
 class dummyPlanner:
     """Generate Path from 1 point directly to another"""
 
-    def __init__(self, target, vel_limit=2) -> None:
-        # TODO: MPC
+    def __init__(self, target, ) -> None:
         self.target = target
-        self.vel_limit = vel_limit
         # setpoint target location, controller output: desired velocity.
-        self.pid_x = PID(
-            2,
-            0.15,
-            1.5,
-            setpoint=self.target[0],
-            output_limits=(-vel_limit, vel_limit),
-        )
-        self.pid_y = PID(
-            2, 0.15, 1.5, setpoint=self.target[1], output_limits=(-vel_limit, vel_limit)
-        )
+        self.pid_x = PID(2,0.15,1.5,setpoint=self.target[0],output_limits=(-2, 2),)
+        self.pid_y = PID(2, 0.15, 1.5, setpoint=self.target[1], output_limits=(-2, 2))
 
     def __call__(self, loc: np.array):
         """Calls planner at timestep to update cmd_vel"""
@@ -89,7 +46,7 @@ class dummyPlanner:
         direction = target - loc
         distance = np.linalg.norm(direction)
         # maps drone velocities to one.
-        if distance > 1:
+        if distance > 0.5:
             velocities = flight_speed * direction / distance
 
         else:
@@ -159,19 +116,10 @@ class drone:
         # instantiate controllers
 
         # inner control to stabalize inflight dynamics
-        self.pid_alt = PID(
-            5.50844,
-            0.57871,
-            1.2,
-            setpoint=0,
-        )  # PIDController(0.050844,0.000017871, 0, 0) # thrust
-        self.pid_roll = PID(
-            2.6785, 0.56871, 1.2508, setpoint=0, output_limits=(-1, 1)
-        )  # PID(11.0791,2.5263, 0.10513,setpoint=0, output_limits = (-1,1) )
+        self.pid_alt = PID(10.50844,1.57871,1.2,setpoint=0,)  
+        self.pid_roll = PID(2.6785, 0.56871, 1.2508, setpoint=0, output_limits=(-1, 1)) 
         self.pid_pitch = PID(2.6785, 0.56871, 1.2508, setpoint=0, output_limits=(-1, 1))
-        self.pid_yaw = PID(
-            0.54, 0, 5.358333, setpoint=1, output_limits=(-3, 3)
-        )  # PID(0.11046, 0.0, 15.8333, setpoint=1, output_limits = (-2,2) )
+        self.pid_yaw = PID(0.54, 0, 5.358333, setpoint=1, output_limits=(-3, 3)) 
 
         # outer control loops
         self.pid_v_x = PID(0.1, 0.003, 0.02, setpoint=0, output_limits=(-0.1, 0.1))
@@ -233,25 +181,16 @@ with mujoco.viewer.launch_passive(my_drone.m, my_drone.d) as viewer:
     start = time.time()
     step = 1
 
-    while viewer.is_running() and time.time() - start < 30:
+    while viewer.is_running() and time.time() - start < 5:
         step_start = time.time()
 
-        # flight program
-        if time.time() - start > 2:
-            my_drone.planner.update_target(np.array((1, 1, 1)))
-
-        if time.time() - start > 10:
-            my_drone.planner.update_target(np.array((1, 1, 1)))
-
-        if time.time() - start > 18:
-            my_drone.planner.update_target(np.array((1, 1, 1)))
-
+        my_drone.planner.update_target(np.array((0.6, 0.6, 0.5)))
+            
         # outer control loop
-        if step % 20 == 0:
-            my_drone.update_outer_conrol()
+        my_drone.update_outer_conrol()
         # Inner control loop
         my_drone.update_inner_control()
-
+        print(my_drone.d.qpos)
         mujoco.mj_step(my_drone.m, my_drone.d)
 
         # Example modification of a viewer option: toggle contact points every two seconds.
