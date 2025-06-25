@@ -7,10 +7,19 @@ import mujoco.viewer
 model = mujoco.MjModel.from_xml_path("mujoco_menagerie-main/skydio_x2/scene.xml")
 data = mujoco.MjData(model)
 
-# -------------------- Target and Init --------------------
-target = np.array([0.0, 0.0, 1])
 
-# PID state: [previous_error, integral]
+# -------------------- Trajectory Function --------------------
+def trajectory(time, t_final, C_final, home_pos):
+    """Generates trajectory position, velocity, and acceleration."""
+    a2 = 3 / t_final**2
+    a3 = -2 / t_final**3
+    Cposition = (a2 * time**2 + a3 * time**3) * C_final
+    Cvelocity = (2 * a2 * time + 3 * time**2 * a3) * C_final
+    Cacceleration = (2 * a2 + 6 * time * a3) * C_final
+    return Cposition, Cvelocity, Cacceleration
+
+
+# -------------------- PID Controller Setup --------------------
 pid_state = {}
 
 
@@ -44,30 +53,35 @@ def compute_pid(name, measurement, dt=0.01):
     return output
 
 
-# -------------------- PID Controllers Init --------------------
-# Planner PIDs
-init_pid("x", 20, 0.15, 1.5, setpoint=target[0], out_min=-2, out_max=2)
-init_pid("y", 20, 0.15, 1.5, setpoint=target[1], out_min=-2, out_max=2)
+# -------------------- PID Initialization --------------------
+# These will be updated dynamically based on trajectory
+init_pid("x", 20, 0.15, 1.5, out_min=-2, out_max=2)
+init_pid("y", 20, 0.15, 1.5, out_min=-2, out_max=2)
 
-# Outer control PIDs
 init_pid("vx", 1, 0.003, 0.02, setpoint=0, out_min=-0.1, out_max=0.1)
 init_pid("vy", 1, 0.003, 0.02, setpoint=0, out_min=-0.1, out_max=0.1)
 
-# Inner control PIDs
 init_pid("alt", 20.50844, 1.57871, 1.2, setpoint=0)
 init_pid("roll", 20.6785, 0.56871, 1.2508, setpoint=0, out_min=-1, out_max=1)
 init_pid("pitch", 20.6785, 0.56871, 1.2508, setpoint=0, out_min=-1, out_max=1)
 init_pid("yaw", 10.54, 0.0, 5.358333, setpoint=1, out_min=-3, out_max=3)
 
+# -------------------- Target Setup --------------------
+target = np.array([0.0, 0.0, 1])
+t_final = 5.0  # seconds
+vel_limit = 0.5
 
 # -------------------- Simulation Loop --------------------
 with mujoco.viewer.launch_passive(model, data) as viewer:
     time.sleep(1)
-    start = time.time()
     dt = model.opt.timestep
-    vel_limit = 0.5
+    start = time.time()
 
-    while viewer.is_running() and time.time() - start < 5:
+    # Save initial position to compute relative trajectory
+    initial_pos = np.array(data.qpos[:3])  # x, y, z
+    C_final = target - initial_pos
+
+    while viewer.is_running() and data.time < t_final + 5:
         step_start = time.time()
 
         # Sensor values
@@ -76,29 +90,28 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         angles = pos[3:]  # roll, yaw, pitch
         alt = pos[2]
 
-        # --------- Planner Output ---------
+        # --------- Trajectory Following ---------
+        traj_time = data.time
+        traj_pos, traj_vel, traj_acc = trajectory(
+            traj_time, t_final, C_final, initial_pos
+        )
+        target_pos = initial_pos + traj_pos
+        target_vel = traj_vel
+
+        # Set planner PID setpoints
+        pid_state["x"]["setpoint"] = target_pos[0]
+        pid_state["y"]["setpoint"] = target_pos[1]
+        pid_state["alt"]["setpoint"] = target_pos[2]
+
+        # Outer velocity setpoints
         vx_target = compute_pid("x", pos[0], dt)
         vy_target = compute_pid("y", pos[1], dt)
-
-        # Altitude setpoint
-        distance = target[2] - pos[2]
-        if abs(distance) > 0.5:
-            time_sample = 1 / 4
-            time_to_target = abs(distance) / vel_limit
-            number_steps = int(time_to_target / time_sample)
-            delta_alt = distance / number_steps
-            alt_setpoint = pos[2] + 2 * delta_alt
-        else:
-            alt_setpoint = target[2]
-        pid_state["alt"]["setpoint"] = alt_setpoint
-
-        # Outer loop setpoints
         pid_state["vx"]["setpoint"] = vx_target
         pid_state["vy"]["setpoint"] = vy_target
 
+        # Compute pitch/roll setpoints
         angle_pitch = compute_pid("vx", vel[0], dt)
         angle_roll = -compute_pid("vy", vel[1], dt)
-
         pid_state["pitch"]["setpoint"] = angle_pitch
         pid_state["roll"]["setpoint"] = angle_roll
 
@@ -119,7 +132,7 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
 
         # --------- Step Simulation ---------
         mujoco.mj_step(model, data)
-        print(data.qpos)
+        print(f"Time: {data.time:.2f}, Pos: {pos[:3]}")
 
         with viewer.lock():
             viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(data.time % 2)
