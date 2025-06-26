@@ -55,20 +55,20 @@ def compute_pid(name, measurement, dt=0.01):
 
 # -------------------- PID Initialization --------------------
 # These will be updated dynamically based on trajectory
-init_pid("x", 20, 0.15, 1.5, out_min=-2, out_max=2)
-init_pid("y", 20, 0.15, 1.5, out_min=-2, out_max=2)
+init_pid("x", 5, 0.15, 3.5, out_min=-2, out_max=2)
+init_pid("y", 5, 0.15, 3.5, out_min=-2, out_max=2)
 
-init_pid("vx", 1, 0.003, 0.02, setpoint=0, out_min=-0.1, out_max=0.1)
-init_pid("vy", 1, 0.003, 0.02, setpoint=0, out_min=-0.1, out_max=0.1)
+init_pid("vx", 5, 0.3, 4, setpoint=0, out_min=-0.1, out_max=0.1)
+init_pid("vy", 5, 0.3, 4, setpoint=0, out_min=-0.1, out_max=0.1)
 
-init_pid("alt", 20.50844, 1.57871, 1.2, setpoint=0)
-init_pid("roll", 20.6785, 0.56871, 1.2508, setpoint=0, out_min=-1, out_max=1)
-init_pid("pitch", 20.6785, 0.56871, 1.2508, setpoint=0, out_min=-1, out_max=1)
-init_pid("yaw", 10.54, 0.0, 5.358333, setpoint=1, out_min=-3, out_max=3)
+init_pid("alt", 5.50844, 3.57871, 10.2, setpoint=0)
+init_pid("roll", 5.6785, 0.56871, 20.2508, setpoint=0, out_min=-1, out_max=1)
+init_pid("pitch", 5.6785, 0.56871, 20.2508, setpoint=0, out_min=-1, out_max=1)
+init_pid("yaw", 5.54, 0.3, 30.358333, setpoint=1, out_min=-3, out_max=3)
 
 # -------------------- Target Setup --------------------
 target = np.array([0.0, 0.0, 1])
-t_final = 5.0  # seconds
+t_final = 10.0  # seconds
 vel_limit = 0.5
 
 # -------------------- Simulation Loop --------------------
@@ -81,7 +81,7 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
     initial_pos = np.array(data.qpos[:3])  # x, y, z
     C_final = target - initial_pos
 
-    while viewer.is_running() and data.time < t_final + 5:
+    while viewer.is_running() and data.time < t_final:
         step_start = time.time()
 
         # Sensor values
